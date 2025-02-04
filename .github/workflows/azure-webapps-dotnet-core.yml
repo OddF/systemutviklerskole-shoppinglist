@@ -1,0 +1,85 @@
+name: Build and deploy ASP.Net Core app to an Azure Web App
+run-name: Build and deploy ${{ inputs.build_id }}
+
+env:
+  AZURE_WEBAPP_NAME: ShoppingListMain    # Bytt denne med noe som er unik for deg (f.eks legg inn navn)
+  RESOURCE_GROUP: SysteutviklerskolenDemo
+  AZURE_WEBAPP_PACKAGE_PATH: '.'      # set this to the path to your web app project, defaults to the repository root
+  DOTNET_VERSION: '9'                 # set this to the .NET Core version to use
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  createAzureWebApp:
+    runs-on: ubuntu-latest
+
+    steps:
+      -  name: Login to Azure
+         uses: azure/login@v1
+         with:
+           creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Sjekk om webapp finnes
+        id: check-webapp
+        run: |
+          if az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }}; then
+            echo "Web app exists"
+            echo "::set-output name=exists::true"
+          else
+            echo "Web app does not exist"
+            echo "::set-output name=exists::false"
+          fi
+
+      - name: Opprett webapp
+        if: steps.check-webapp.outputs.exists == 'false'
+        run: |
+          az webapp create --resource-group ${{ env.RESOURCE_GROUP }} --plan sysutv-appserviceplan --name ${{ env.AZURE_WEBAPP_NAME }} --runtime "dotnet:9"
+      
+      - name: Set storage account envVar
+        run: |
+          az webapp config appsettings set --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.AZURE_WEBAPP_NAME }} --settings ConnectionStrings__AzureStorage="${{ secrets.STORAGEACCOUNTCONNECTIONSTRING }}"
+
+  build:
+    runs-on: windows-latest
+
+    steps:
+       - uses: actions/checkout@v4
+       - name: Setup .NET
+         uses: actions/setup-dotnet@v4
+         with:
+          dotnet-version: 9.0.x
+       - name: Restore dependencies
+         run: dotnet restore
+       - name: Build
+         run: dotnet build --no-restore
+       
+       - name: Build frontend
+         working-directory: ./shoppinglist-frontend
+         run: npm install
+       - name: Build frontend
+         working-directory: ./shoppinglist-frontend
+         run: npm run build
+       
+       - name: dotnet publish
+         working-directory: ./
+         run: dotnet publish -c Release -o ./publish
+      
+       - name: copy frontend to wwwroot
+         run: cp -r .\shoppinglist-frontend\out .\publish\wwwroot
+
+       - name: Zip publish directory
+         run: Compress-Archive .\publish\* -DestinationPath publish.zip
+       
+       -  name: Login to Azure
+          uses: azure/login@v1
+          with:
+            creds: ${{ secrets.AZURE_CREDENTIALS }}
+            
+       - name: Deploy to Azure Web App
+         run: |
+          az webapp deploy --resource-group ${{ env.RESOURCE_GROUP }} --name ${{ env.AZURE_WEBAPP_NAME }} --src-path publish.zip --type zip
