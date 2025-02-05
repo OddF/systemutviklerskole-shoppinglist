@@ -43,7 +43,7 @@ jobs:
       
       - name: Set storage account envVar
         run: |
-          // TODO: sette EnvVar ConnectionStrings__AzureStorage til connection string
+          # TODO: sette EnvVar ConnectionStrings__AzureStorage til connection string
 
   build:
     runs-on: windows-latest
@@ -55,7 +55,7 @@ jobs:
          with:
           dotnet-version: 9.0.x
         
-        // TODO: kopier over steg fra Oppgave 1
+        # TODO: kopier over steg fra Oppgave 1
       
        - name: copy frontend to wwwroot
          run: cp -r .\shoppinglist-frontend\out .\publish\wwwroot
